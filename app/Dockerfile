@@ -1,31 +1,55 @@
-# Use slim image to reduce attack surface
-FROM python:3.12-slim
+# ── Stage 1: Builder ──────────────────────────────────────────────────────
+FROM python:3.12-alpine AS builder
 
-# Set working directory
+WORKDIR /build
+
+# Alpine uses apk instead of apt-get
+RUN apk add --no-cache gcc musl-dev libffi-dev
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# ── Stage 2: Final hardened image ─────────────────────────────────────────
+FROM python:3.12-alpine AS final
+
+LABEL org.opencontainers.image.title="devsecops-app"
+LABEL org.opencontainers.image.description="DevSecOps Pipeline App"
+
+# Install curl for health check only
+RUN apk add --no-cache curl
+
+# Create non-root user (Alpine syntax)
+RUN addgroup -S appgroup && adduser -S -G appgroup appuser
+
 WORKDIR /app
 
-# Create non-root user for security
-RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
+# Copy installed deps from builder stage
+COPY --from=builder /install /usr/local
 
-# Install dependencies first (layer caching)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy app source with correct ownership
+COPY --chown=appuser:appgroup app.py .
 
-# Copy app source
-COPY app.py .
+# Lock down permissions
+RUN chmod -R 550 /app && \
+    mkdir -p /tmp/app && \
+    chown appuser:appgroup /tmp/app
 
-# Set ownership
-RUN chown -R appuser:appgroup /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    APP_ENV=production \
+    PORT=5000
 
-# Run as non-root
 USER appuser
-
-# Expose port
 EXPOSE 5000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
 
-# Run with gunicorn for production
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "60", "app:app"]
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:5000", \
+     "--workers", "2", \
+     "--threads", "4", \
+     "--timeout", "60", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "app:app"]
