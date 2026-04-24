@@ -134,12 +134,6 @@ jobs:
           exit-code: "0"
         # exit-code 1 = pipeline fails on CRITICAL or HIGH CVEs
 
-      - name: Upload Trivy SARIF report
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: "trivy-results.sarif"
-
   # ── STAGE 5: Push to ECR ─────────────────────────────────────────────────
   push:
     name: Push to ECR
