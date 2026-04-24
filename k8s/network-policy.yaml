@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: devsecops-app-netpol
+  namespace: devsecops
+spec:
+  podSelector:
+    matchLabels:
+      app: devsecops-app
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only allow traffic from the ALB ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 5000
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS outbound (for AWS Secrets Manager calls)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32  # Block EC2 metadata endpoint
+      ports:
+        - protocol: TCP
+          port: 443
