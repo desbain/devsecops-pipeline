@@ -12,6 +12,11 @@ env:
   EKS_CLUSTER_NAME: devsecops-cluster
   IMAGE_TAG: ${{ github.sha }}
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   # ── STAGE 1: SAST — Static Application Security Testing ──────────────────
   sast:
