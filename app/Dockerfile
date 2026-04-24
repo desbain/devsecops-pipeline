@@ -30,7 +30,7 @@ COPY --from=builder /install /usr/local
 COPY --chown=appuser:appgroup app.py .
 
 # Lock down permissions
-RUN chmod -R 550 /app && \
+RUN chmod -R 755 /app && \
     mkdir -p /tmp && \
     chmod 1777 /tmp && \
     chown appuser:appgroup /tmp
