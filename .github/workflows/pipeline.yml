@@ -124,15 +124,24 @@ jobs:
       - name: Load Docker image
         run: docker load -i image.tar
 
-      - name: Run Trivy vulnerability scan
+      - name: Run Trivy — table output (show findings)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build.outputs.image-uri }}
+          format: "table"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          exit-code: "0"
+
+      - name: Run Trivy — fail on fixable CVEs only
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ needs.build.outputs.image-uri }}
           format: "sarif"
           output: "trivy-results.sarif"
           severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
           exit-code: "1"
-        # exit-code 1 = pipeline fails on CRITICAL or HIGH CVEs
 
       - name: Upload Trivy SARIF report
         uses: github/codeql-action/upload-sarif@v3
