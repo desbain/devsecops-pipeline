@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 env:
-  AWS_REGION: us-east-1
+  AWS_REGION: us-east-2
   ECR_REPOSITORY: devsecops-app
   EKS_CLUSTER_NAME: devsecops-cluster
   IMAGE_TAG: ${{ github.sha }}
