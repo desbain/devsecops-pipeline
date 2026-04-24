@@ -31,8 +31,9 @@ COPY --chown=appuser:appgroup app.py .
 
 # Lock down permissions
 RUN chmod -R 550 /app && \
-    mkdir -p /tmp/app && \
-    chown appuser:appgroup /tmp/app
+    mkdir -p /tmp && \
+    chmod 1777 /tmp && \
+    chown appuser:appgroup /tmp
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
