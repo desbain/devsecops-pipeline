@@ -21,6 +21,9 @@ spec:
       securityContext:
         runAsNonRoot: {{ .Values.securityContext.runAsNonRoot }}
         runAsUser: {{ .Values.securityContext.runAsUser }}
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
       containers:
         - name: {{ .Release.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -32,6 +35,9 @@ spec:
               value: {{ .Values.env.APP_ENV | quote }}
             - name: APP_VERSION
               value: {{ .Values.env.APP_VERSION | quote }}
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
           securityContext:
             readOnlyRootFilesystem: {{ .Values.securityContext.readOnlyRootFilesystem }}
             allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
