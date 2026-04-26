@@ -86,4 +86,12 @@ jobs:
         run: |
           echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
           echo "repository_url=$(terraform output -raw repository_url)" >> $GITHUB_OUTPUT
-          echo "kubectl_command=$
+        
+      - name: Post Apply Summary
+        run: |
+          echo "## ✅ Terraform Apply Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster Name | ${{ steps.outputs.outputs.cluster_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ECR Repository | ${{ steps.outputs.outputs.repository_url }} |" >> $GITHUB_STEP_SUMMARY
