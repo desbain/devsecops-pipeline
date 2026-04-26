@@ -29,4 +29,3 @@ Thumbs.db
 *.pem
 *.key
 kubeconfig
-terraform/dev.tfvars
