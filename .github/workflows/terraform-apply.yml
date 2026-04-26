@@ -1,0 +1,91 @@
+# ##############################################################################
+# Terraform Apply — runs on main branch only
+# Requires manual approval via GitHub Environment protection rules
+# ##############################################################################
+
+name: Terraform Apply
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - terraform/**
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+env:
+  TF_VERSION: "1.14.7"
+  AWS_REGION: "us-east-2"
+  WORKING_DIR: "./terraform"
+
+jobs:
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    environment: production    # ← requires manual approval in GitHub
+
+    steps:
+      # ── Step 1: Checkout code ───────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Step 2: Configure AWS credentials ───────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ── Step 3: Setup Terraform ─────────────────────────────────────────────
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ── Step 4: Terraform Format Check ─────────────────────────────────────
+      - name: Terraform Format Check
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check -recursive
+
+      # ── Step 5: Terraform Init ──────────────────────────────────────────────
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init
+
+      # ── Step 6: Terraform Validate ──────────────────────────────────────────
+      - name: Terraform Validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+      # ── Step 7: Terraform Plan ──────────────────────────────────────────────
+      - name: Terraform Plan
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform plan \
+            -var-file="dev.tfvars" \
+            -no-color \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+
+      # ── Step 8: Terraform Apply ─────────────────────────────────────────────
+      - name: Terraform Apply
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform apply \
+            -auto-approve \
+            tfplan
+
+      # ── Step 9: Save Outputs ────────────────────────────────────────────────
+      - name: Save Terraform Outputs
+        working-directory: ${{ env.WORKING_DIR }}
+        id: outputs
+        run: |
+          echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
+          echo "repository_url=$(terraform output -raw repository_url)" >> $GITHUB_OUTPUT
+          echo "kubectl_command=$
+          

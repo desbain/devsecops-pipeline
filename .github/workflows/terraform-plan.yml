@@ -1,0 +1,125 @@
+# ##############################################################################
+# Terraform Plan — runs on feature branches and pull requests
+# Posts the plan output as a PR comment for review
+# ##############################################################################
+
+name: Terraform Plan
+
+on:
+  push:
+    branches:
+      - feature/**
+    paths:
+      - terraform/**
+  pull_request:
+    branches:
+      - develop
+      - main
+    paths:
+      - terraform/**
+
+permissions:
+  contents: read
+  pull-requests: write    # needed to post plan as PR comment
+  id-token: write         # needed for OIDC authentication
+
+env:
+  TF_VERSION: "1.14.7"
+  AWS_REGION: "us-east-2"
+  WORKING_DIR: "./terraform"
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Step 1: Checkout code ───────────────────────────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Step 2: Configure AWS credentials via OIDC ──────────────────────────
+      # No hardcoded keys — GitHub Actions assumes the pipeline IAM role
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # ── Step 3: Setup Terraform ─────────────────────────────────────────────
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      # ── Step 4: Terraform Format Check ─────────────────────────────────────
+      # Fails if code is not properly formatted
+      - name: Terraform Format Check
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check -recursive
+        continue-on-error: false
+
+      # ── Step 5: Terraform Init ──────────────────────────────────────────────
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init
+
+      # ── Step 6: Terraform Validate ──────────────────────────────────────────
+      # Checks syntax and internal consistency
+      - name: Terraform Validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+
+      # ── Step 7: Terraform Plan ──────────────────────────────────────────────
+      - name: Terraform Plan
+        working-directory: ${{ env.WORKING_DIR }}
+        id: plan
+        run: |
+          terraform plan \
+            -var-file="dev.tfvars" \
+            -no-color \
+            -out=tfplan \
+            2>&1 | tee plan_output.txt
+        continue-on-error: true
+
+      # ── Step 8: Post Plan as PR Comment ────────────────────────────────────
+      - name: Post Plan to PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('${{ env.WORKING_DIR }}/plan_output.txt', 'utf8');
+            const maxLength = 65000;
+            const truncated = plan.length > maxLength
+              ? plan.substring(0, maxLength) + '\n... truncated ...'
+              : plan;
+
+            const output = `## 🔍 Terraform Plan Results
+            **Branch:** \`${{ github.head_ref }}\`
+            **Triggered by:** @${{ github.actor }}
+
+            <details>
+            <summary>📋 Click to expand plan output</summary>
+
+            \`\`\`terraform
+            ${truncated}
+            \`\`\`
+            </details>
+
+            **Plan Status:** ${{ steps.plan.outcome == 'success' && '✅ Success' || '❌ Failed' }}
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
+
+      # ── Step 9: Fail if plan failed ─────────────────────────────────────────
+      - name: Check Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
