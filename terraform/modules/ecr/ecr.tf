@@ -7,13 +7,12 @@
 resource "aws_ecr_repository" "app" {
   name                 = var.repository_name
   image_tag_mutability = "MUTABLE"
+  force_delete         = true    ← add this line
 
-  # Automatically scan every image pushed to ECR
   image_scanning_configuration {
     scan_on_push = true
   }
 
-  # Encrypt images at rest using AES256
   encryption_configuration {
     encryption_type = "AES256"
   }
