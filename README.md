@@ -1,206 +1,321 @@
-# DevSecOps CI/CD Pipeline — Python Flask on Amazon EKS
+# 🛡️ Project 1 — DevSecOps CI/CD Pipeline
 
-> **Portfolio Project** | George Awa, CISSP | DevSecOps Engineer
+![Pipeline](https://img.shields.io/badge/Pipeline-GitHub_Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-IaC-7B42BC?style=for-the-badge&logo=terraform&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-EKS_%7C_ECR_%7C_VPC-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Alpine_Hardened-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-Helm_%7C_RBAC-326CE5?style=for-the-badge&logo=kubernetes&logoColor=white)
+![Security](https://img.shields.io/badge/Security-Bandit_%7C_Trivy_%7C_Safety-FF0000?style=for-the-badge&logo=shield&logoColor=white)
 
-A production-grade DevSecOps pipeline that builds, scans, and deploys a Python Flask application to Amazon EKS using GitHub Actions. Every commit triggers automated security gates — no vulnerable code reaches production.
+> **A production-grade, security-first DevSecOps pipeline that automatically provisions AWS infrastructure with Terraform, scans code and containers, builds a hardened Docker image, and deploys a Flask application to Amazon EKS — with security gates at every stage.**
 
 ---
 
-## Architecture Overview
+## 📋 Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Infrastructure — Terraform Modules](#infrastructure--terraform-modules)
+- [Pipeline Stages](#pipeline-stages)
+- [Security Controls](#security-controls)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Prerequisites](#prerequisites)
+- [Setup & Deployment](#setup--deployment)
+- [Branch Strategy](#branch-strategy)
+- [API Endpoints](#api-endpoints)
+- [Compliance Mapping](#compliance-mapping)
+- [Lessons Learned](#lessons-learned)
+
+---
+
+## 🏗️ Architecture Overview
 
 ```
 Developer Push
       │
       ▼
-┌─────────────────────────────────────────────────────┐
-│              GitHub Actions Pipeline                 │
-│                                                     │
-│  [1] SAST Scan        ← Bandit (Python)             │
-│       │                                             │
-│  [2] Dependency Scan  ← Safety                      │
-│       │                                             │
-│  [3] Docker Build     ← python:3.12-slim            │
-│       │                                             │
-│  [4] Image Scan       ← Trivy (CRITICAL/HIGH block) │
-│       │                                             │
-│  [5] Push to ECR      ← Amazon Elastic Container    │
-│       │                  Registry                   │
-│  [6] Deploy to EKS    ← Helm + kubectl              │
-└─────────────────────────────────────────────────────┘
-      │
-      ▼
-┌─────────────────────────────────────────────────────┐
-│              Amazon EKS Cluster                      │
-│                                                     │
-│  Namespace: devsecops                               │
-│  ├── Deployment (2 replicas, non-root)              │
-│  ├── Service (ClusterIP)                            │
-│  ├── Ingress (ALB)                                  │
-│  ├── NetworkPolicy (zero-trust)                     │
-│  ├── RBAC (least-privilege ServiceAccount)          │
-│  └── HPA (auto-scales 2–5 replicas)                │
-└─────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    GitHub Actions                            │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────────┐ │
+│  │ Terraform   │    │ App Pipeline│    │ Destroy         │ │
+│  │ Plan/Apply  │    │ (6 stages)  │    │ (manual only)   │ │
+│  └─────────────┘    └─────────────┘    └─────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+      │                     │
+      ▼                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    AWS Account                               │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │                VPC (10.0.0.0/16)                     │  │
+│  │  ┌─────────────────┐    ┌─────────────────────────┐  │  │
+│  │  │  Public Subnets │    │    Private Subnets       │  │  │
+│  │  │  (Load Balancer)│    │    (EKS Worker Nodes)    │  │  │
+│  │  └─────────────────┘    └─────────────────────────┘  │  │
+│  │  ┌──────────────────────────────────────────────┐   │  │
+│  │  │           EKS Cluster (v1.34)                │   │  │
+│  │  │   Pod 1 (Flask)          Pod 2 (Flask)       │   │  │
+│  │  └──────────────────────────────────────────────┘   │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ ECR Registry │  │ S3 (TF State)│  │ DynamoDB (Lock)  │  │
+│  └──────────────┘  └──────────────┘  └──────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Security Controls
+## 🏗️ Infrastructure — Terraform Modules
 
-| Layer | Control | Tool |
-|-------|---------|------|
-| Code | Static analysis — blocks medium+ severity issues | Bandit |
-| Dependencies | Known CVE scan on requirements.txt | Safety |
-| Container | Image vulnerability scan — blocks CRITICAL/HIGH CVEs | Trivy |
-| Registry | Scan on push enabled | Amazon ECR |
-| Runtime | Non-root user, read-only filesystem, dropped capabilities | Dockerfile + Helm |
-| Network | Zero-trust NetworkPolicy — deny all, allow only required traffic | Kubernetes |
-| Access | Least-privilege RBAC ServiceAccount per namespace | Kubernetes |
-| Secrets | No hardcoded secrets — GitHub encrypted secrets + AWS Secrets Manager | GitHub Actions |
-| Infrastructure | Remote state with S3 + DynamoDB lock | Terraform |
+All infrastructure is provisioned as code using Terraform:
+
+```
+terraform/
+├── main.tf              ← wires all modules together
+├── variables.tf         ← input variable declarations
+├── outputs.tf           ← infrastructure outputs
+├── locals.tf            ← shared tags (Project, Environment, Owner)
+├── dev.tfvars           ← environment values
+└── modules/
+    ├── vpc/             ← VPC, subnets, NAT gateway, route tables
+    ├── security_groups/ ← EKS cluster and node security groups
+    ├── iam/             ← IAM roles for cluster, nodes, GitHub Actions OIDC
+    ├── eks/             ← EKS cluster, node group, CloudWatch logging
+    └── ecr/             ← ECR repository, lifecycle policy, repo policy
+```
+
+### Terraform CI/CD Pipelines
+
+| Workflow | Trigger | Action |
+|----------|---------|--------|
+| `terraform-plan.yml` | `feature/*` push, PR | Runs plan, posts as PR comment |
+| `terraform-apply.yml` | Push to `main` | Applies infrastructure |
+| `destroy.yml` | Manual only | Requires typing `DESTROY` |
 
 ---
 
-## Project Structure
+## 🔄 Pipeline Stages
+
+| Stage | Tool | Purpose | Blocks on Failure |
+|-------|------|---------|-------------------|
+| 1 — SAST Scan | Bandit | Static code analysis | ✅ Yes |
+| 2 — Dependency Scan | Safety | CVE scan of pip packages | ✅ Yes |
+| 3 — Docker Build | Docker | Multi-stage Alpine build | ✅ Yes |
+| 4 — Container Scan | Trivy | Image vulnerability scan | ✅ Yes |
+| 5 — Push to ECR | AWS ECR | Push to private registry | ✅ Yes |
+| 6 — Deploy to EKS | Helm | Rolling deploy to Kubernetes | ✅ Yes |
+
+---
+
+## 🔐 Security Controls
+
+### Infrastructure Layer
+- VPC isolation — EKS nodes in private subnets
+- IAM OIDC — GitHub Actions uses federation, no hardcoded keys
+- Least-privilege IAM — separate roles for cluster, nodes, pipeline
+- S3 state encryption + DynamoDB locking
+
+### Application Layer
+- SAST, dependency scanning, container scanning on every commit
+- Non-root container, read-only filesystem, dropped capabilities
+- emptyDir volume for Gunicorn worker temp files
+
+### Kubernetes Layer
+- RBAC scoped to `devsecops` namespace
+- NetworkPolicy default-deny
+- Resource limits, liveness and readiness probes
+
+---
+
+## 🛠️ Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| Application | Python 3.12, Flask 3.1.3, Gunicorn 23.0.0 |
+| Container | Docker Alpine, Multi-stage build |
+| Registry | Amazon ECR (us-east-2) |
+| Orchestration | Amazon EKS 1.34, Kubernetes |
+| Deployment | Helm 4.1.4 |
+| Infrastructure | Terraform 1.14.7 |
+| CI/CD | GitHub Actions |
+| Security Scanning | Bandit, Safety, Trivy |
+| State Storage | AWS S3 + DynamoDB |
+| Cloud | AWS (EKS, ECR, VPC, IAM, S3, DynamoDB) |
+
+---
+
+## 📁 Project Structure
 
 ```
 devsecops-pipeline/
+├── .github/workflows/
+│   ├── pipeline.yml           # 6-stage app pipeline
+│   ├── terraform-plan.yml     # Terraform plan on PRs
+│   ├── terraform-apply.yml    # Terraform apply on main
+│   └── destroy.yml            # Manual destroy
 ├── app/
-│   ├── app.py               # Flask application
-│   ├── requirements.txt     # Python dependencies
-│   ├── Dockerfile           # Hardened container image
-│   └── .dockerignore
-├── .github/
-│   └── workflows/
-│       └── pipeline.yml     # Full CI/CD pipeline with security gates
-├── helm/
-│   └── devsecops-app/
-│       ├── Chart.yaml
-│       ├── values.yaml
-│       └── templates/
-│           ├── deployment.yaml   # Pod security context enforced
-│           ├── service.yaml
-│           └── rbac.yaml         # ServiceAccount + Role + RoleBinding
-├── k8s/
-│   └── network-policy.yaml  # Zero-trust NetworkPolicy
+│   ├── app.py                 # Flask app (3 endpoints)
+│   ├── Dockerfile             # Hardened Alpine image
+│   └── requirements.txt       # Pinned dependencies
+├── helm/devsecops-app/
+│   └── templates/
+│       ├── deployment.yaml    # K8s Deployment
+│       ├── service.yaml       # ClusterIP service
+│       └── rbac.yaml          # Role + RoleBinding
 ├── terraform/
-│   ├── main.tf              # EKS cluster + VPC + ECR
+│   ├── main.tf
 │   ├── variables.tf
-│   └── outputs.tf
+│   ├── outputs.tf
+│   ├── locals.tf
+│   ├── dev.tfvars
+│   ├── modules/
+│   │   ├── vpc/
+│   │   ├── security_groups/
+│   │   ├── iam/
+│   │   ├── eks/
+│   │   └── ecr/
+│   └── scripts/destroy.sh
 └── README.md
 ```
 
 ---
 
-## Prerequisites
+## ✅ Prerequisites
 
-- AWS account with IAM user/role permissions for EKS, ECR, VPC
-- GitHub repository with Actions enabled
-- Tools installed locally: `terraform`, `kubectl`, `helm`, `aws-cli`
+| Tool | Version |
+|------|---------|
+| AWS CLI | 2.x |
+| Terraform | 1.14.7+ |
+| kubectl | 1.28+ |
+| Helm | 4.x |
+| Docker | 24.x |
 
 ---
 
-## Step-by-Step Setup
+## 🚀 Setup & Deployment
 
-### 1. Clone the repository
+### 1. Clone and configure AWS
 ```bash
-git clone https://github.com/YOUR_USERNAME/devsecops-pipeline.git
+git clone https://github.com/desbain/devsecops-pipeline.git
 cd devsecops-pipeline
+aws configure  # region: us-east-2
 ```
 
-### 2. Provision infrastructure with Terraform
+### 2. Create Terraform state backend
+```bash
+aws s3api create-bucket \
+  --bucket devsecops-terraform-state-<account-id> \
+  --region us-east-2 \
+  --create-bucket-configuration LocationConstraint=us-east-2
+
+aws dynamodb create-table \
+  --table-name terraform-state-lock \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --region us-east-2
+```
+
+### 3. Initialize and apply Terraform
 ```bash
 cd terraform
-
-# Update backend bucket name in main.tf first, then:
 terraform init
-terraform plan
-terraform apply
+terraform plan -var-file="dev.tfvars"
+terraform apply -var-file="dev.tfvars"
 ```
 
-This creates:
-- VPC with public/private subnets across 2 AZs
-- Amazon EKS cluster (v1.29) with managed node group
-- Amazon ECR repository with scan-on-push enabled
-- S3 backend with DynamoDB state locking
-
-### 3. Configure kubectl
+### 4. Configure kubectl
 ```bash
-aws eks update-kubeconfig --region us-east-1 --name devsecops-cluster
-kubectl get nodes  # Verify cluster is ready
+aws eks update-kubeconfig --name devsecops-cluster --region us-east-2
+kubectl get nodes
 ```
 
-### 4. Set GitHub Actions secrets
-In your GitHub repo → Settings → Secrets → Actions, add:
-
+### 5. Add GitHub Secrets
 | Secret | Value |
 |--------|-------|
-| `AWS_ACCESS_KEY_ID` | Your IAM access key |
-| `AWS_SECRET_ACCESS_KEY` | Your IAM secret key |
+| `AWS_ACCESS_KEY_ID` | IAM access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret key |
+| `AWS_REGION` | `us-east-2` |
+| `ECR_REGISTRY` | `<account-id>.dkr.ecr.us-east-2.amazonaws.com` |
 
-### 5. Apply the NetworkPolicy
+### 6. Push to trigger pipeline
 ```bash
-kubectl create namespace devsecops
-kubectl apply -f k8s/network-policy.yaml
-```
-
-### 6. Push code to trigger the pipeline
-```bash
-git add .
-git commit -m "feat: initial devsecops pipeline"
 git push origin main
 ```
 
-The pipeline will automatically run all 6 stages. Watch it in the GitHub Actions tab.
+### 7. View the application
+```bash
+kubectl port-forward service/devsecops-app 8080:80 -n devsecops
+# Open http://localhost:8080
+```
+
+### 8. Destroy infrastructure
+```bash
+cd terraform
+bash scripts/destroy.sh  # Type DESTROY to confirm
+```
 
 ---
 
-## Pipeline Stages Explained
+## 🌿 Branch Strategy
 
-### Stage 1 — SAST (Bandit)
-Bandit scans all Python source code for common security issues: hardcoded passwords, use of `eval()`, SQL injection patterns, insecure use of `subprocess`, etc. The pipeline **fails** if medium or higher severity issues are found.
-
-### Stage 2 — Dependency Scan (Safety)
-Safety checks `requirements.txt` against the PyPI advisory database for known CVEs in Flask, gunicorn, and any other dependencies.
-
-### Stage 3 — Docker Build
-Builds the container image using a hardened `python:3.12-slim` base. The image runs as a non-root user and includes a health check endpoint.
-
-### Stage 4 — Container Scan (Trivy)
-Trivy scans the built image for OS-level and library-level CVEs. The pipeline **fails and blocks the push** if any CRITICAL or HIGH severity vulnerabilities are found.
-
-### Stage 5 — Push to ECR
-Only reached after all security gates pass. Pushes the verified image to Amazon ECR with both the commit SHA tag and `latest`.
-
-### Stage 6 — Deploy to EKS
-Deploys to the `devsecops` namespace using Helm. Waits for rollout to complete before marking the pipeline as successful.
+```
+main      ← Production. Protected. Requires PR.
+develop   ← Integration. Full pipeline.
+feature/* ← Working branches. Scans only.
+```
 
 ---
 
-## Security Architecture Decisions
+## 🌐 API Endpoints
 
-**Why non-root container?**
-Running as root inside a container means a container escape gives an attacker root on the host. Setting `runAsUser: 1000` and `runAsNonRoot: true` eliminates this risk.
-
-**Why read-only filesystem?**
-Attackers who achieve code execution often write malicious files to disk. A read-only filesystem prevents persistence.
-
-**Why NetworkPolicy?**
-By default, all pods in a Kubernetes cluster can talk to each other. The NetworkPolicy enforces deny-all and only allows the minimum required traffic — this limits blast radius if a pod is compromised.
-
-**Why block EC2 metadata endpoint?**
-The EC2 metadata endpoint (169.254.169.254) can expose IAM credentials to any process inside the pod. The NetworkPolicy explicitly blocks this.
+| Endpoint | Response |
+|----------|----------|
+| `/` | `{"status":"ok","message":"DevSecOps Pipeline App","version":"<sha>"}` |
+| `/health` | `{"status":"healthy"}` |
+| `/ready` | `{"status":"ready"}` |
 
 ---
 
-## Frameworks This Project Demonstrates
+## 📋 Compliance Mapping
 
-- **NIST 800-53**: SI-10 (Input Validation), SA-11 (Developer Testing), CM-7 (Least Functionality)
-- **PCI-DSS**: Req 6.3 (Security vulnerabilities addressed), Req 6.4 (Public-facing app protection)
-- **CIS Kubernetes Benchmark**: Pod security, RBAC, network policies
+| Control | Framework | Implementation |
+|---------|-----------|---------------|
+| AC-6 Least Privilege | NIST 800-53 | Non-root container, dropped capabilities, IAM scoping |
+| AU-2 Audit Events | NIST 800-53 | CloudTrail, EKS control plane logs |
+| CM-7 Least Functionality | NIST 800-53 | Alpine base, multi-stage build |
+| CM-8 System Inventory | NIST 800-53 | Terraform state tracks all resources |
+| RA-5 Vulnerability Scanning | NIST 800-53 | Bandit, Safety, Trivy on every commit |
+| SC-7 Boundary Protection | NIST 800-53 | NetworkPolicy default-deny, VPC isolation |
+| Req 11.3 | PCI-DSS | Vulnerability scanning before every deploy |
+| § 164.312 | HIPAA | Access controls, audit logging, encryption |
 
 ---
 
-## Author
+## 💡 Lessons Learned
 
-**George Awa, CISSP** | DevSecOps Engineer  
-[LinkedIn](https://linkedin.com/in/georgeawa) · [GitHub](https://github.com/desbain)
+1. **Terraform module separation** — VPC, SG, IAM, EKS, ECR as independent modules allows independent auditing and reuse.
+2. **IAM trust policies** — Cluster role needs `eks.amazonaws.com`, node role needs `ec2.amazonaws.com`. Swapping causes silent failures.
+3. **Terraform state imports** — `terraform import` brings manually created resources under state management without recreating them.
+4. **readOnlyRootFilesystem + Gunicorn** — Requires `emptyDir` volume for `/tmp` since Gunicorn needs to write worker temp files.
+5. **ECR tag mutability** — Use `MUTABLE` during development, switch to `IMMUTABLE` with SHA-only tags in production.
+6. **OIDC vs access keys** — GitHub Actions OIDC tokens are short-lived and repo-scoped — far more secure than static IAM keys.
+
+---
+
+## 👤 Author
+
+**George Awa** — DevSecOps Engineer | GRC & Cloud Security
+
+[![GitHub](https://img.shields.io/badge/GitHub-desbain-181717?style=flat&logo=github)](https://github.com/desbain)
+
+---
+
+## 📦 Related Projects
+
+| Project | Status |
+|---------|--------|
+| Project 2 — AWS Security Monitoring (GuardDuty + Lambda) | 🔜 Next |
+| Project 3 — Hardened EKS (Checkov + ArgoCD) | 📋 Planned |
+| Project 4 — Linux SME Lab | 📋 Planned |
+| Project 5 — Docker Mastery | 📋 Planned |
+| ShieldOps — Capstone Platform | 📋 Planned |
