@@ -9,19 +9,15 @@ on:
   push:
     branches:
       - feature/**
-    paths:
-      - terraform/**
   pull_request:
     branches:
       - develop
       - main
-    paths:
-      - terraform/**
 
 permissions:
   contents: read
-  pull-requests: write    # needed to post plan as PR comment
-  id-token: write         # needed for OIDC authentication
+  pull-requests: write
+  id-token: write
 
 env:
   TF_VERSION: "1.14.7"

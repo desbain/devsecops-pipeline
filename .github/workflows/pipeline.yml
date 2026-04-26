@@ -216,3 +216,16 @@ jobs:
         run: |
           kubectl rollout status deployment/devsecops-app -n devsecops
           kubectl get pods -n devsecops
+     
+      - name: Check cluster exists
+        run: |
+          aws eks describe-cluster \
+            --name devsecops-cluster \
+            --region us-east-2 || echo "CLUSTER_EXISTS=false" >> $GITHUB_ENV
+
+      - name: Deploy to EKS
+        if: ${{ env.CLUSTER_EXISTS != 'false' }}
+        run: |
+          helm upgrade --install devsecops-app ./helm/devsecops-app \
+            --namespace devsecops \
+            --create-namespace
