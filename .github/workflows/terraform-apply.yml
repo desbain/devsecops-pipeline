@@ -77,9 +77,8 @@ jobs:
         working-directory: ${{ env.WORKING_DIR }}
         run: |
           terraform apply \
-            -auto-approve \
-            tfplan
-
+            -var-file="dev.tfvars" \
+            -auto-approve
       # ── Step 9: Save Outputs ────────────────────────────────────────────────
       - name: Save Terraform Outputs
         working-directory: ${{ env.WORKING_DIR }}
@@ -88,4 +87,3 @@ jobs:
           echo "cluster_name=$(terraform output -raw cluster_name)" >> $GITHUB_OUTPUT
           echo "repository_url=$(terraform output -raw repository_url)" >> $GITHUB_OUTPUT
           echo "kubectl_command=$
-          
